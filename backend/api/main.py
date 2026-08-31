@@ -11,10 +11,12 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,24 @@ class StatsResponse(BaseModel):
     exception_count: int | None = None
     match_rate: float | None = None
     processing_time_ms: float | None = None
+
+
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    timestamp: str
+
+
+class UploadConfig(BaseModel):
+    ledger: str | None = None
+    settlement: str | None = None
+    bank: str | None = None
+
+
+class JobResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
 
 
 def get_supabase():
@@ -102,6 +122,17 @@ def get_copilot():
             set_transaction_index(transactions)
         _COPILOT = CopilotSession()
     return _COPILOT
+
+
+@app.get("/health", response_model=HealthResponse)
+def health_check():
+    """Health check endpoint for monitoring and load balancers."""
+    from datetime import datetime, timezone
+    return HealthResponse(
+        status="healthy",
+        version="1.0.0",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )
 
 
 @app.get("/api/stats", response_model=StatsResponse)
@@ -193,3 +224,258 @@ def chat(payload: ChatRequest):
         raise HTTPException(status_code=422, detail="message must not be empty")
     copilot = get_copilot()
     return ChatResponse(reply=copilot.ask(message))
+
+
+# --- Custom Document Upload & Processing ---
+
+# In-memory job storage (in production, use Redis or database)
+_jobs: dict[str, dict[str, Any]] = {}
+
+
+def _detect_csv_type(headers: list[str]) -> str | None:
+    """Auto-detect CSV type based on column headers."""
+    headers_lower = [h.lower().strip() for h in headers]
+    
+    # Ledger indicators
+    if "order_id" in headers_lower and "customer_name" in headers_lower:
+        return "ledger"
+    
+    # Settlement indicators
+    if "settlement_id" in headers_lower and "txn_ref" in headers_lower:
+        return "settlement"
+    
+    # Bank statement indicators
+    if "reference_no" in headers_lower and ("debit" in headers_lower or "credit" in headers_lower):
+        return "bank"
+    
+    return None
+
+
+def _parse_csv_preview(file_content: bytes) -> tuple[list[str], list[list[str]]]:
+    """Parse CSV and return headers and first few rows."""
+    import csv
+    import io
+    
+    text = file_content.decode("utf-8")
+    reader = csv.reader(io.StringIO(text))
+    rows = list(reader)
+    if not rows:
+        return [], []
+    headers = rows[0]
+    preview_rows = rows[1:6]  # First 5 data rows
+    return headers, preview_rows
+
+
+@app.post("/api/upload/preview")
+async def preview_upload(
+    files: list[UploadFile] = File(...),
+):
+    """Preview uploaded files with auto-detected categories."""
+    results = []
+    for file in files:
+        content = await file.read()
+        headers, preview_rows = _parse_csv_preview(content)
+        detected_type = _detect_csv_type(headers)
+        
+        results.append({
+            "filename": file.filename,
+            "detected_type": detected_type,
+            "headers": headers,
+            "preview_rows": preview_rows,
+            "size": len(content),
+        })
+    
+    return {"files": results}
+
+
+
+@app.get("/api/jobs/{job_id}")
+async def get_job_status(job_id: str):
+    """Get job status and progress."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    return {
+        "job_id": job["id"],
+        "status": job["status"],
+        "progress": job["progress"],
+        "message": job["message"],
+        "result": job["result"],
+        "error": job["error"],
+    }
+
+
+@app.get("/api/jobs/{job_id}/stream")
+async def stream_job_progress(job_id: str):
+    """Server-Sent Events stream for real-time job progress."""
+    from asyncio import sleep
+    import json
+    
+    async def event_generator():
+        while True:
+            job = _jobs.get(job_id)
+            if not job:
+                yield f"data: {json.dumps({'error': 'Job not found'})}\n\n"
+                break
+            
+            yield f"data: {json.dumps({'progress': job['progress'], 'message': job['message'], 'status': job['status'], 'result': job.get('result')})}\n\n"
+            
+            if job["status"] in ("completed", "failed"):
+                break
+            
+            await sleep(0.5)
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+async def _process_job(job_id: str):
+    """Background job processor."""
+    import asyncio
+    import os
+    import tempfile
+    import shutil
+    from backend.matching.pipeline import run_matching_pipeline
+    from backend.agents.explainer import ExceptionExplainer, DEGRADED_MESSAGE
+    from backend.audit.supabase_client import AuditLogger
+    
+    job = _jobs.get(job_id)
+    if not job:
+        return
+    
+    job["status"] = "processing"
+    job["progress"] = 10
+    job["message"] = "Loading documents..."
+    
+    files_data = job.get("files", {})
+    temp_dir = tempfile.mkdtemp()
+    
+    try:
+        paths = {}
+        for key in ["ledger", "settlement", "bank"]:
+            if key in files_data:
+                content = files_data[key]["content"]
+                path = os.path.join(temp_dir, f"{key}.csv")
+                with open(path, "wb") as f:
+                    f.write(content)
+                paths[key] = path
+            else:
+                raise ValueError(f"Missing required file: {key}")
+                
+        await asyncio.sleep(0.1)
+        job["progress"] = 30
+        job["message"] = "Normalizing and running reconciliation..."
+        
+        # Run matching pipeline
+        result = run_matching_pipeline(paths["ledger"], paths["settlement"], paths["bank"])
+        
+        await asyncio.sleep(0.1)
+        job["progress"] = 70
+        job["message"] = "Generating explanations..."
+        
+        if result.exceptions:
+            explainer = ExceptionExplainer()
+            if explainer.available:
+                for record in result.exceptions:
+                    record.explanation = explainer.explain_exception(record)
+            else:
+                for record in result.exceptions:
+                    record.explanation = DEGRADED_MESSAGE
+                    
+        await asyncio.sleep(0.1)
+        job["progress"] = 90
+        job["message"] = "Auditing results..."
+        
+        # Push to Supabase
+        audit_logger = AuditLogger()
+        if audit_logger.is_connected:
+            run_id = audit_logger.create_run(result.stats)
+            all_records = result.auto_matched + result.needs_review + result.exceptions
+            audit_logger.write_batch(all_records, run_id=run_id)
+            
+        # Recompute event-level match rate to match the dashboard
+        total_events = 0
+        auto_events = 0
+        all_recs = result.auto_matched + result.needs_review + result.exceptions
+        for record in all_recs:
+            ledger_count = sum(1 for tx in record.txn_ids if tx.startswith("led_order_"))
+            total_events += ledger_count
+            if record.status == "auto_matched":
+                auto_events += ledger_count
+                
+        event_match_rate = auto_events / total_events if total_events > 0 else 0.0
+            
+        job["progress"] = 100
+        job["status"] = "completed"
+        job["message"] = "Processing complete!"
+        job["result"] = {
+            "match_rate": event_match_rate,
+            "total_events": total_events,
+            "auto_matched": auto_events,
+            "needs_review": result.stats["review_count"],
+            "exceptions": result.stats["exception_count"],
+        }
+    except Exception as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc)
+        job["message"] = f"Processing failed: {exc}"
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# Start background processing when job is created
+@app.post("/api/process/start")
+async def start_processing(
+    ledger_file: UploadFile = File(None),
+    settlement_file: UploadFile = File(None),
+    bank_file: UploadFile = File(None),
+    config: str = Form("{}"),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
+    import uuid
+    import json
+    
+    try:
+        config_data = json.loads(config)
+    except json.JSONDecodeError:
+        config_data = {}
+    
+    job_id = str(uuid.uuid4())[:8]
+    
+    files_data = {}
+    for field_name, file in [("ledger", ledger_file), ("settlement", settlement_file), ("bank", bank_file)]:
+        if file and file.filename:
+            content = await file.read()
+            if content:
+                files_data[field_name] = {
+                    "filename": file.filename,
+                    "content": content,
+                }
+    
+    _jobs[job_id] = {
+        "id": job_id,
+        "status": "pending",
+        "progress": 0,
+        "message": "Initializing...",
+        "files": files_data,
+        "config": config_data,
+        "result": None,
+        "error": None,
+    }
+    
+    # Start background processing
+    if background_tasks:
+        background_tasks.add_task(_process_job, job_id)
+    
+    return JobResponse(
+        job_id=job_id,
+        status="pending",
+        message="Job queued for processing",
+    )

@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  fetchExceptions,
-  fetchStats,
-  type ExceptionRecord,
-  type RunStats,
-} from "../api";
+import { fetchExceptions, fetchStats, type ExceptionRecord, type RunStats } from "../api";
+import CopilotChat from "./CopilotChat";
 
 function throughput(stats: RunStats | null): string {
   if (!stats?.total_events || !stats?.processing_time_ms) return "—";
@@ -27,16 +23,12 @@ function StatCard({
 }) {
   return (
     <div
-      className="animate-fade-up rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl transition duration-300 hover:border-white/25 hover:bg-white/10"
+      className="animate-fade-up card transition-all duration-300 hover:border-accent/50 hover:shadow-lg hover:shadow-accent/10"
       style={{ animationDelay: `${delay}ms` }}
     >
-      <p className="text-xs font-semibold tracking-widest text-slate-400 uppercase">
-        {label}
-      </p>
-      <p className={`mt-2 text-4xl font-black tracking-tight ${accent}`}>
-        {value}
-      </p>
-      <p className="mt-1 text-xs text-slate-500">{sub}</p>
+      <p className="text-xs font-semibold tracking-widest text-muted uppercase">{label}</p>
+      <p className={`mt-2 text-4xl font-black tracking-tight ${accent}`}>{value}</p>
+      <p className="mt-1 text-xs text-muted">{sub}</p>
     </div>
   );
 }
@@ -56,12 +48,12 @@ function StatsPanel() {
 
   if (error) {
     return (
-      <div className="animate-fade-up rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200 backdrop-blur-xl">
+      <div className="animate-fade-up card border-rose-400/30 bg-rose-50/50 dark:bg-rose-950/20 p-5 text-sm text-rose-700 dark:text-rose-300">
         <p className="font-semibold">Could not load run stats</p>
-        <p className="mt-1 text-rose-300/80">{error}</p>
+        <p className="mt-1 text-rose-300/80 dark:text-rose-400">{error}</p>
         <button
           onClick={load}
-          className="mt-3 rounded-lg border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20"
+          className="mt-3 rounded-lg border border-rose-400/40 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-100/20 dark:hover:bg-rose-900/20"
         >
           Retry
         </button>
@@ -73,17 +65,13 @@ function StatsPanel() {
     return (
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         {[0, 1, 2, 3].map((i) => (
-          <div
-            key={i}
-            className="h-28 animate-pulse rounded-2xl border border-white/5 bg-white/5"
-          />
+          <div key={i} className="h-28 animate-pulse card" />
         ))}
       </div>
     );
   }
 
-  const matchPct =
-    stats.match_rate !== null ? `${(stats.match_rate * 100).toFixed(1)}%` : "—";
+  const matchPct = stats.match_rate !== null ? `${(stats.match_rate * 100).toFixed(1)}%` : "—";
 
   return (
     <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -91,28 +79,28 @@ function StatsPanel() {
         label="Auto-Match Rate"
         value={matchPct}
         sub={`${stats.auto_matched_count ?? "—"} of ${stats.total_events ?? "—"} events (seed ${stats.seed ?? "—"})`}
-        accent="bg-gradient-to-r from-emerald-300 to-cyan-300 bg-clip-text text-transparent"
+        accent="stat-value"
         delay={0}
       />
       <StatCard
         label="Needs Review"
         value={String(stats.review_count ?? "—")}
         sub="flagged for a human"
-        accent="text-amber-300"
+        accent="stat-value-amber"
         delay={70}
       />
       <StatCard
         label="Exceptions"
         value={String(stats.exception_count ?? "—")}
         sub="honest unresolved breaks"
-        accent="text-rose-300"
+        accent="stat-value-rose"
         delay={140}
       />
       <StatCard
         label="Throughput"
         value={throughput(stats)}
         sub={`${stats.processing_time_ms ?? "—"} ms for ${stats.total_events ?? "—"} events`}
-        accent="text-indigo-300"
+        accent="stat-value-indigo"
         delay={210}
       />
     </div>
@@ -124,46 +112,33 @@ function reasonOf(record: ExceptionRecord): string {
   return typeof reason === "string" ? reason : "No reason recorded";
 }
 
-function ExceptionCard({
-  record,
-  index,
-}: {
-  record: ExceptionRecord;
-  index: number;
-}) {
+function ExceptionCard({ record, index }: { record: ExceptionRecord; index: number }) {
   return (
     <div
-      className="animate-fade-up rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-xl transition duration-300 hover:border-rose-400/30 hover:bg-white/10"
+      className="animate-fade-up card transition-all duration-300 hover:border-rose-400/30 hover:shadow-lg hover:shadow-rose-500/10"
       style={{ animationDelay: `${index * 80}ms` }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded-md bg-rose-500/15 px-2 py-0.5 text-[11px] font-bold tracking-wider text-rose-300 uppercase">
-          Exception
-        </span>
-        <span className="rounded-md bg-slate-500/15 px-2 py-0.5 font-mono text-[11px] text-slate-300">
-          {record.rule_or_model}
-        </span>
-        <span className="ml-auto text-[11px] text-slate-500">
+        <span className="badge badge-exception">Exception</span>
+        <span className="badge badge-info font-mono text-xs">{record.rule_or_model}</span>
+        <span className="ml-auto text-[11px] text-muted">
           confidence {record.confidence_score.toFixed(2)} · {record.match_stage}
         </span>
       </div>
-      <p className="mt-3 font-mono text-sm break-all text-slate-200">
+      <p className="mt-3 font-mono text-sm break-all text-brown/80 dark:text-cream/80">
         {record.txn_ids.join(", ")}
       </p>
-      <p className="mt-2 text-xs text-slate-400">{reasonOf(record)}</p>
+      <p className="mt-2 text-xs text-muted">{reasonOf(record)}</p>
       {record.explanation ? (
-        <div className="mt-3 rounded-xl border border-indigo-400/20 bg-indigo-500/10 p-3">
-          <p className="text-[11px] font-bold tracking-widest text-indigo-300 uppercase">
+        <div className="mt-3 rounded-xl border border-brown/20 bg-brown/10 p-3">
+          <p className="text-[11px] font-bold tracking-widest text-brown-lighter uppercase">
             Copilot explanation
           </p>
-          <p className="mt-1 text-sm leading-relaxed text-indigo-100/90">
-            {record.explanation}
-          </p>
+          <p className="mt-1 text-sm leading-relaxed text-brown font-medium">{record.explanation}</p>
         </div>
       ) : (
-        <p className="mt-3 text-xs text-slate-500 italic">
-          Explanation pending — rerun run_eval.py with the LLM explainer
-          enabled.
+        <p className="mt-3 text-xs text-muted italic">
+          Explanation pending — rerun run_eval.py with the LLM explainer enabled.
         </p>
       )}
     </div>
@@ -186,41 +161,34 @@ function ExceptionsQueue() {
   return (
     <section className="animate-fade-up" style={{ animationDelay: "260ms" }}>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-100">Exception Queue</h2>
+        <h2 className="text-lg font-bold text-brown dark:text-cream">Exception Queue</h2>
         <button
           onClick={load}
-          className="rounded-lg border border-white/10 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-white/25 hover:bg-white/10"
+          className="btn-secondary"
         >
           Refresh
         </button>
       </div>
 
       {error ? (
-        <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 p-5 text-sm text-rose-200">
+        <div className="card border-rose-400/30 bg-rose-50/50 dark:bg-rose-950/20 p-5 text-sm text-rose-700 dark:text-rose-300">
           <p className="font-semibold">Could not load exceptions</p>
-          <p className="mt-1 text-rose-300/80">{error}</p>
+          <p className="mt-1 text-rose-300/80 dark:text-rose-400">{error}</p>
         </div>
       ) : records === null ? (
         <div className="space-y-3">
           {[0, 1].map((i) => (
-            <div
-              key={i}
-              className="h-36 animate-pulse rounded-2xl border border-white/5 bg-white/5"
-            />
+            <div key={i} className="h-36 animate-pulse card" />
           ))}
         </div>
       ) : records.length === 0 ? (
-        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5 text-sm text-emerald-200">
+        <div className="card border-emerald-400/30 bg-emerald-50/50 dark:bg-emerald-950/20 p-5 text-sm text-emerald-700 dark:text-emerald-300">
           No unresolved exceptions in the latest run.
         </div>
       ) : (
         <div className="space-y-3">
           {records.map((record, index) => (
-            <ExceptionCard
-              key={record.match_id}
-              record={record}
-              index={index}
-            />
+            <ExceptionCard key={record.match_id} record={record} index={index} />
           ))}
         </div>
       )}
@@ -230,9 +198,14 @@ function ExceptionsQueue() {
 
 export default function Dashboard() {
   return (
-    <div className="space-y-6">
-      <StatsPanel />
-      <ExceptionsQueue />
+    <div className="lg:grid lg:grid-cols-3 lg:gap-6 space-y-6 lg:space-y-0 items-start">
+      <div className="lg:col-span-2 space-y-6">
+        <StatsPanel />
+        <ExceptionsQueue />
+      </div>
+      <div className="lg:col-span-1 sticky top-24 h-[calc(100vh-8rem)] min-h-[500px]">
+        <CopilotChat />
+      </div>
     </div>
   );
 }

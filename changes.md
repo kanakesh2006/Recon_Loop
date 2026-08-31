@@ -313,3 +313,18 @@ Build order: P6-01 → P6-02 → P6-03 → P6-04. Full specs in the implementati
 
 With 121/121 tests passing, a 94.2% match rate, beautiful frontend, and a fully functional AI Controller Agent, ReconLoop is officially complete! 
 Congratulations on a flawless collaboration!
+
+---
+
+## [2026-08-29 08:35] — Post-Phase 6 Redesign & Polish
+
+**Antigravity:** Implemented a series of frontend and architectural fixes based on user review to ensure a crash-free, premium, end-to-end working system:
+1. **Theme & UI Tweaks:** Maintained the beautiful cream/brown minimalist fintech theme. Replaced the simple ⟳ logo div with an ultra-crisp inline SVG infinity loop to ensure scalable, high-end aesthetics without hitting rate limits. Added subtle glassmorphism to headers and improved text contrast for the "Exception Explanation" box.
+2. **Copilot Chat Upgrade:** Added the Copilot Chat feature to the dashboard layout. Built a functional Speech-to-Text capability in the chat input using the Web Speech API so users can dictate questions to the settlement copilot.
+3. **File Category Re-assignment:** Rewrote the upload page's `FileUpload` component to support overriding auto-detected file categories. Users can now manually swap between "Ledger", "Settlement", and "Bank" via a dropdown before clicking confirm.
+4. **Data Contract Fix:** Found and fixed an issue where the frontend `api.ts` was uploading files as `ledger`, `settlement`, and `bank`, but the backend expected `ledger_file`, `settlement_file`, and `bank_file`. 
+5. **SSE Streaming Fix:** Switched the `DocumentUpload` component from 1-second interval polling to a true Server-Sent Events (`EventSource`) stream. Fixed a fatal backend `NameError: name 'json' is not defined` inside the streaming endpoint that was abruptly terminating connections.
+6. **Infinite Initialization Fix:** The processing pipeline was stuck indefinitely on "Initializing...". Debugged `main.py` and discovered two identical `@app.post("/api/process/start")` routes masking each other. The first route lacked the `BackgroundTasks` queue execution and shadowed the correct implementation. Removed the duplicate, ensuring the pipeline properly executes and streams progress to the UI.
+7. **NaN% Result Fix:** The dashboard displayed "NaN%" and empty fields upon job completion because the backend SSE stream in `stream_job_progress` was omitting the `result` object in its JSON payload. Updated the streaming endpoint to correctly yield `job.get('result')` so the frontend UI can parse the final statistics.
+8. **Real-Time Dynamic Pipeline Wiring:** Completely rewrote the `_process_job` background worker in `main.py` so that it no longer simulates job steps. It now accepts the raw bytes of user-uploaded files, writes them to secure `tempfile` directories, and passes those file paths into the core deterministic `run_matching_pipeline`. It then automatically generates LLM explanations for the specific exceptions found in the uploaded batch and uploads the new state to Supabase via `AuditLogger`. The dashboard stats will now perfectly reflect the exact data the user just uploaded.
+9. **Pipeline Stats Formatting Fix:** Fixed an `AttributeError` in the final processing step of `main.py` caused by treating the `result.stats` dictionary as an object (`result.stats.needs_review`). Adjusted the dictionary access correctly to `result.stats["review_count"]` so the final stats are correctly pushed to the UI.
