@@ -1,10 +1,10 @@
 # ReconLoop
 
-### A Multi-Source Reconciliation Agent with Explainable, Conversational Exception Resolution
+### Multi-Source Reconciliation Agent with Explainable, Conversational Exception Resolution
 
-**Razorpay AI Buildathon — Track 04: AI Finance Controller**
+**Razorpay AI Buildathon | Track 04: AI Finance Controller**
 
-ReconLoop closes one full finance-ops loop end to end: it ingests order, settlement, and bank data from three different formats, auto-matches them through a tiered rules + fuzzy engine, and — where most tools stop at "here's a mismatch" — uses a RAG-grounded agent to explain *why* each exception happened, lets a finance user ask about it conversationally, and logs every decision to an immutable audit trail.
+ReconLoop closes a full finance-ops loop end to end. It ingests order, settlement, and bank data across three different CSV formats, auto-matches them through a tiered rules and fuzzy matching engine, and uses a RAG-grounded agent to explain why each exception occurred. Finance users can investigate discrepancies conversationally over text or voice, with every decision written to an immutable audit log.
 
 ![ReconLoop System Architecture](reconloop_architecture_detailed.svg)
 
@@ -12,59 +12,60 @@ ReconLoop closes one full finance-ops loop end to end: it ingests order, settlem
 
 ## The Problem
 
-Reconciliation is still manual at most companies. The data lives in three systems that never agree:
+Reconciliation remains a manual bottleneck for finance teams. Transaction data is spread across three isolated systems:
 
-| Source | What it knows | What it looks like |
+| Source | Role & Details | Example Record |
 |---|---|---|
-| Internal ledger | order IDs, gross amounts, customer names | `order_a1b2..., 2499.00` |
-| Gateway settlement | settlement IDs, fees, taxes, UTRs | `setl_k9m8..., net 2436.48` |
-| Bank statement | reference strings with UTRs buried inside | `NEFT/HDFCN.../RZPPAYOUT` |
+| Internal Ledger | Order IDs, gross amounts, customer names | `order_a1b2..., 2499.00` |
+| Gateway Settlement | Settlement IDs, net payouts, fees, UTRs | `setl_k9m8..., net 2436.48` |
+| Bank Statement | Raw reference strings with embedded UTRs | `NEFT/HDFCN.../RZPPAYOUT` |
 
-The bottleneck in 2026 is **verification capacity** — being able to trust and check output at volume. A demo that shows one cherry-picked match proves nothing.
+The primary challenge in finance operations is verification capacity: validating output at high volume rather than relying on cherry-picked examples.
 
-## What ReconLoop Does
+## Key Features
 
-1. **Dynamic Ingestion & Auto-Detection** — Accepts heterogeneous CSV formats (Internal Ledger, Payment Gateway, Bank Statements) via a drag-and-drop UI. Uses column-pair heuristics for reliable auto-detection, with manual override capabilities. Amounts are normalized to integer paise.
-2. **Matches in tiers** — exact keys first (order_id ↔ txn_ref, UTR extraction), then fuzzy (amount tolerance bands, sliding date windows, rapidfuzz reference matching, one-to-many bundled payouts).
-3. **Routes by confidence** — auto-matched / needs_review / exception, with every decision written to an immutable Supabase audit log.
-4. **Explains exceptions with AI Confidence** — a LangGraph agent grounds each break in tool-retrieved transaction evidence and policy documents. It produces a cited plain-English explanation along with an **AI Confidence Score** so users can take informed, risk-aware decisions.
-5. **Answers questions via Voice & Text** — a conversational copilot over the same data: *"Why is this order short?"*. Includes Web Speech API integration for voice dictation, fully grounded and cited.
-6. **Resilient Streaming** — Real-time Server-Sent Events (SSE) processing with graceful LLM rate-limit fallbacks so the app never crashes under load.
+1. **Dynamic Ingestion & Auto-Detection**: Drag-and-drop CSV upload for Internal Ledgers, Payment Gateways, and Bank Statements. Includes column-pair heuristics for automatic schema detection with manual override controls. Amounts are normalized to integer paise.
+2. **Tiered Matching Engine**: Matches exact keys first (order ID to transaction reference and UTR extraction), followed by fuzzy passes (amount tolerance bands, sliding date windows, RapidFuzz string matching, and bundled payout resolution).
+3. **Confidence Routing**: Categorizes transactions into Auto-Matched, Needs Review, or Exception, persisting all audit records directly to Supabase.
+4. **AI Exception Explainer & Confidence Score**: A LangGraph agent grounds breaks using transaction evidence and policy documents. It generates plain-English explanations with an AI Confidence Score to support risk-aware decisions.
+5. **Conversational Copilot (Voice & Text)**: Interactive Q&A interface powered by Web Speech API voice dictation. Answers questions like *"Why is order #4521 short?"* with cited policy references.
+6. **Resilient SSE Streaming**: Server-Sent Events stream pipeline progress in real time with built-in API rate-limit backoff handling.
 
-## Measured Results (held-out 86-event labeled batch, seed 42)
+## Evaluation & Measured Results (86-Event Labeled Batch, Seed 42)
 
-| Metric | Result |
+| Metric | Measured Result |
 |---|---|
-| Auto-match rate | **94.2%** (81/86 events, event-level) |
-| Routing accuracy | **100%** — every event landed in its expected bucket |
-| Honest exceptions | **2** chargeback events — flagged, explained with citations, not hidden |
-| Throughput | **~10,000 events/sec** (86 events in ~8.5 ms) |
-| Edge cases handled | bundled payouts, partial refunds, rounding drift (₹0.01–₹2), duplicate IDs, 3–5 day settlement delays, reference typos, pending orders, chargebacks |
+| Auto-Match Rate | **94.2%** (81 out of 86 events) |
+| Routing Accuracy | **100%** (All events correctly categorized) |
+| Honest Exceptions | **2** chargeback breaks (Flagged and explained with citations) |
+| Pipeline Throughput | **~10,000 events/sec** (86 events processed in ~8.5 ms) |
+| Handled Edge Cases | Bundled payouts, partial refunds, rounding drift (₹0.01 to ₹2), duplicate IDs, 3-5 day settlement lag, reference typos, pending orders, chargebacks |
 
-Ground truth was fixed **before** the pipeline ever ran. Per-category accuracy and the failure list are measured, not claimed — full numbers in [`eval_report.md`](eval_report.md), methodology in the report's section 7.
+Ground truth labels were established prior to running the matching pipeline. Full evaluation methodology and per-category breakdowns are documented in [`eval_report.md`](eval_report.md).
 
 ## Tech Stack
 
-| Layer | Tool |
+| Layer | Component |
 |---|---|
 | Backend API | FastAPI + Uvicorn |
-| Frontend | React 19 + TypeScript + Vite + Tailwind CSS v4 |
-| Matching engine | Python, pandas, rapidfuzz (Decimal paise arithmetic) |
-| Audit trail & matched ledger | Supabase (Postgres) |
-| RAG knowledge base | Pinecone Serverless (768-d, dual-embedding namespaces) |
-| Embeddings | Hugging Face Inference API — `BAAI/bge-base-en-v1.5`, fallback `all-MiniLM-L6-v2` (zero-padded) |
-| Agents | LangChain + LangGraph (ReAct), Groq `openai/gpt-oss-120b` → `openai/gpt-oss-20b` fallback |
-| Observability | LangSmith tracing |
-| Synthetic data | Python + Faker with a hand-authored edge-case injector |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4 |
+| Matching Engine | Python, pandas, RapidFuzz (Integer paise arithmetic) |
+| Database & Audit Trail | Supabase (PostgreSQL) |
+| Vector Store (RAG) | Pinecone Serverless (768-d `bge-vectors` namespace) |
+| Embeddings | Hugging Face Inference API (`BAAI/bge-base-en-v1.5`, fallback `all-MiniLM-L6-v2`) |
+| AI Agents | LangChain + LangGraph ReAct Agent (Groq `openai/gpt-oss-120b` with `20b` fallback) |
+| Observability | LangSmith Tracing |
+| Synthetic Data | Python + Faker with edge-case injector |
 
-## Run It Locally
+## Local Setup
 
 ### Prerequisites
 
-- Python 3.12+, Node 22+
-- A `.env` at the project root (copy `.env.example` and fill in):
+- Python 3.12+
+- Node.js 22+
+- A `.env` file created at the project root (see `.env.example`):
 
-```
+```env
 SUPABASE_URL=...
 SUPABASE_KEY=...
 PINECONE_API_KEY=...
@@ -72,72 +73,75 @@ GROQ_API_KEY=...
 HUGGING_FACE_API_KEY=...
 ```
 
-### Option A — Docker (one command)
+### Option 1: Docker (Single Command)
 
 ```bash
 docker compose up --build
 ```
 
-Backend on `:8000`, dashboard on `:5173`.
+Access the dashboard at `http://localhost:5173` and backend API docs at `http://localhost:8000/docs`.
 
-### Option B — Native (two processes)
+### Option 2: Native Setup
 
 ```bash
-# 1. Python deps
+# 1. Install Python dependencies
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt        # Windows
 # .venv/bin/pip install -r requirements.txt          # macOS/Linux
 
-# 2. Frontend deps
+# 2. Install Frontend dependencies
 cd frontend && npm install && cd ..
 
-# 3. Seed the RAG knowledge base (once)
+# 3. Seed RAG knowledge base
 .venv\Scripts\python backend\agents\vector_store.py data\policies
 
-# 4. Run the full evaluation (generates data, matches, explains, uploads audit trail)
+# 4. Run evaluation pipeline
 .venv\Scripts\python backend\eval\run_eval.py
 
-# 5. Start backend + dashboard together
+# 5. Start development servers
 .venv\Scripts\python run_dev.py
 ```
 
-Open **http://localhost:5173** — API docs at **http://localhost:8000/docs**.
-
-### Verify the claims yourself
+### Verification & Testing
 
 ```bash
-.venv\Scripts\python -m pytest tests/                # 121 tests
-.venv\Scripts\python data\validate_ground_truth.py   # ground-truth sanity check
+# Run unit test suite (121 tests)
+.venv\Scripts\python -m pytest tests/
+
+# Validate ground-truth dataset integrity
+.venv\Scripts\python data\validate_ground_truth.py
 ```
 
-`backend/eval/run_eval.py` regenerates the labeled batch (seeded, deterministic), reruns the pipeline, recomputes every metric against ground truth, and rewrites `eval_report.md` — the honest exception list included.
+Running `backend/eval/run_eval.py` regenerates the deterministic test batch, executes matching and LLM explanation steps, and writes updated results to `eval_report.md`.
 
-## Repository Layout
+## Repository Structure
 
 ```
 reconloop/
+├── README.md                            # Project overview and setup instructions
+├── reconloop_architecture_detailed.svg  # System architecture diagram
 ├── data/
-│   ├── generate_synthetic.py     # labeled held-out batch generator (8 edge-case types)
-│   ├── validate_ground_truth.py  # ground-truth sanity checks
-│   ├── policies/                 # RAG knowledge base documents
-│   └── samples/                  # generated raw CSVs + ground_truth.csv
+│   ├── generate_synthetic.py            # Synthetic batch generator (8 edge-case types)
+│   ├── validate_ground_truth.py         # Ground-truth validator script
+│   ├── policies/                        # Policy documents for RAG agent
+│   └── samples/                         # Generated CSV samples and ground_truth.csv
 ├── backend/
-│   ├── ingestion/                # canonical schema + 3 source mappers
-│   ├── matching/                 # exact → fuzzy → confidence routing pipeline
-│   ├── agents/                   # Pinecone RAG, LangGraph explainer + copilot
-│   ├── audit/                    # Supabase audit logger (graceful offline mode)
-│   ├── eval/                     # metrics harness, markdown report, CLI runner
-│   └── api/                      # FastAPI endpoints for the dashboard
-├── frontend/                     # React + Tailwind dashboard & chat UI
-├── docs/                         # schemas, demo script, architecture
-├── eval_report.md                # generated: full measured evaluation
-└── run_dev.py                    # starts backend + frontend together
+│   ├── ingestion/                       # Schema mappers for ledger, settlement, and bank feeds
+│   ├── matching/                        # Multi-stage matching and confidence routing logic
+│   ├── agents/                          # Pinecone vector store, LangGraph explainer, and copilot
+│   ├── audit/                           # Supabase audit log client
+│   ├── eval/                            # Evaluation harness and report generator
+│   └── api/                             # FastAPI endpoints and SSE worker
+├── frontend/                            # React dashboard and voice copilot interface
+├── docs/                                # Schemas and demo scripts
+├── eval_report.md                       # Full evaluation metrics report
+└── run_dev.py                           # Concurrent backend and frontend launcher
 ```
 
-## Design Notes
+## Core Design Principles
 
-- **Money is always integer paise** — no floating-point matching errors.
-- **Direction is typed, not sign-encoded** — chargebacks are positive amounts with `txn_type="chargeback"`.
-- **Settlement is the bridge** between ledger and bank; they share no direct key.
-- **Every agent degrades gracefully** — missing keys or API failures produce clean, honest messages, never crashes.
-- **Free-tier discipline** — strict rate limiting, exponential backoff, and dual-model fallback throughout the agent layer.
+- **Integer Paise Arithmetic**: Currency values are converted to integer paise to eliminate floating-point precision issues.
+- **Typed Direction**: Transaction types are explicitly categorized (e.g., chargebacks are positive amounts marked as `txn_type="chargeback"`).
+- **Settlement Bridge**: Gateway settlement records serve as the join bridge between internal ledger entries and bank statements.
+- **Graceful Agent Fallback**: Missing API keys or model rate limits trigger clean fallback responses without application crashes.
+- **Rate-Limit Resilience**: Includes exponential backoff, rate limiting, and dual-model fallbacks for all LLM calls.
