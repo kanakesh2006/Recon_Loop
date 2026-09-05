@@ -6,7 +6,7 @@
 
 ReconLoop closes a complete finance operations loop end to end. It ingests order, settlement, and bank data across distinct formats, auto-matches them using a tiered rules and fuzzy matching engine, and goes beyond traditional reconciliation tools by providing RAG-grounded AI explanations for why exceptions occur. Finance teams can investigate breaks conversationally via voice or text, while every decision is backed by an immutable audit trail.
 
-![ReconLoop System Architecture](architecture.png)
+![ReconLoop System Architecture](architecture.svg)
 
 ---
 
