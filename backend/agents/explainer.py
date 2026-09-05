@@ -28,6 +28,8 @@ SYSTEM_PROMPT = (
     "(1) why this break likely occurred, (2) a suggested resolution, and "
     "(3) cite the policy document or transaction records you relied on. "
     "If the evidence is insufficient, say so plainly instead of guessing. "
+    "At the very end of your explanation, you MUST append your confidence score (0.0 to 1.0) "
+    "in exactly this format: [CONFIDENCE: 0.95]. "
     "Be concise: 3-5 sentences."
 )
 
@@ -72,9 +74,9 @@ class ExceptionExplainer:
             "why this break occurred, suggest a resolution, and cite your sources."
         )
 
-    def explain_exception(self, record: MatchRecord) -> str:
+    def explain_exception(self, record: MatchRecord) -> tuple[str, float | None]:
         if not self.available:
-            return DEGRADED_MESSAGE
+            return DEGRADED_MESSAGE, None
         try:
             self.rate_limiter.wait()
             result = invoke_with_retry(
@@ -82,10 +84,22 @@ class ExceptionExplainer:
             )
             messages = result.get("messages", [])
             if not messages:
-                return DEGRADED_MESSAGE
+                return DEGRADED_MESSAGE, None
             content = messages[-1].content
             text = content if isinstance(content, str) else str(content)
-            return text.strip() or DEGRADED_MESSAGE
+            
+            # Extract confidence score
+            import re
+            confidence = None
+            match = re.search(r"\[CONFIDENCE:\s*([\d\.]+)\]", text, re.IGNORECASE)
+            if match:
+                try:
+                    confidence = float(match.group(1))
+                    text = text[:match.start()].strip()
+                except ValueError:
+                    pass
+                    
+            return text.strip() or DEGRADED_MESSAGE, confidence
         except Exception as exc:
             logger.warning("explain_exception failed: %s", exc)
-            return DEGRADED_MESSAGE
+            return DEGRADED_MESSAGE, None

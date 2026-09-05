@@ -21,6 +21,7 @@ export interface ExceptionRecord {
   rule_or_model: string;
   matched_at: string;
   explanation: string;
+  explanation_confidence?: number;
   details: Record<string, unknown>;
 }
 

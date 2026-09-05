@@ -112,17 +112,31 @@ function reasonOf(record: ExceptionRecord): string {
   return typeof reason === "string" ? reason : "No reason recorded";
 }
 
+function formatRule(rule: string): string {
+  return rule.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+}
+
 function ExceptionCard({ record, index }: { record: ExceptionRecord; index: number }) {
+  const isReview = record.status === "needs_review";
+  const badgeClass = isReview ? "badge-review" : "badge-exception";
+  const hoverClass = isReview 
+    ? "hover:border-amber-400/30 hover:shadow-amber-500/10" 
+    : "hover:border-rose-400/30 hover:shadow-rose-500/10";
+
   return (
     <div
-      className="animate-fade-up card transition-all duration-300 hover:border-rose-400/30 hover:shadow-lg hover:shadow-rose-500/10"
+      className={`animate-fade-up card transition-all duration-300 hover:shadow-lg ${hoverClass}`}
       style={{ animationDelay: `${index * 80}ms` }}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="badge badge-exception">Exception</span>
-        <span className="badge badge-info font-mono text-xs">{record.rule_or_model}</span>
-        <span className="ml-auto text-[11px] text-muted">
-          confidence {record.confidence_score.toFixed(2)} · {record.match_stage}
+        <span className={`badge ${badgeClass}`}>
+          {isReview ? "Needs Review" : "Exception"}
+        </span>
+        <span className="badge badge-info font-mono text-xs">
+          {formatRule(record.rule_or_model)}
+        </span>
+        <span className="ml-auto text-[11px] text-muted font-medium uppercase tracking-wider">
+          Stage: {record.match_stage}
         </span>
       </div>
       <p className="mt-3 font-mono text-sm break-all text-brown/80 dark:text-cream/80">
@@ -131,14 +145,21 @@ function ExceptionCard({ record, index }: { record: ExceptionRecord; index: numb
       <p className="mt-2 text-xs text-muted">{reasonOf(record)}</p>
       {record.explanation ? (
         <div className="mt-3 rounded-xl border border-brown/20 bg-brown/10 p-3">
-          <p className="text-[11px] font-bold tracking-widest text-brown-lighter uppercase">
-            Copilot explanation
-          </p>
-          <p className="mt-1 text-sm leading-relaxed text-brown font-medium">{record.explanation}</p>
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[11px] font-bold tracking-widest text-brown-lighter uppercase">
+              Copilot explanation
+            </p>
+            {record.explanation_confidence !== undefined && record.explanation_confidence !== null && (
+              <span className="text-[10px] font-bold tracking-wider text-amber-600 dark:text-amber-400">
+                AI Confidence: {(record.explanation_confidence * 100).toFixed(0)}%
+              </span>
+            )}
+          </div>
+          <p className="text-sm leading-relaxed text-brown font-medium">{record.explanation}</p>
         </div>
       ) : (
         <p className="mt-3 text-xs text-muted italic">
-          Explanation pending — rerun run_eval.py with the LLM explainer enabled.
+          Explanation pending — rerun with the LLM explainer enabled.
         </p>
       )}
     </div>
@@ -161,7 +182,7 @@ function ExceptionsQueue() {
   return (
     <section className="animate-fade-up" style={{ animationDelay: "260ms" }}>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-brown dark:text-cream">Exception Queue</h2>
+        <h2 className="text-lg font-bold text-brown dark:text-cream">Exception & Review Queue</h2>
         <button
           onClick={load}
           className="btn-secondary"

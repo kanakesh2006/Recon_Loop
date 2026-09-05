@@ -113,11 +113,13 @@
   }
   
   .btn-ghost {
-    @apply rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors;
+    @apply rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors;
+    color: var(--color-brown);
   }
   
   .btn-ghost:hover {
     background: rgba(56, 36, 13, 0.1);
+    color: var(--color-brown-light);
   }
   
   .input-field {
@@ -356,11 +358,17 @@
   }
   
   .btn-ghost {
-    @apply rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-300 transition-colors;
+    @apply rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors;
+    color: var(--color-brown);
   }
   
   .btn-ghost:hover {
     background: rgba(56, 36, 13, 0.1);
+    color: var(--color-brown-light);
+  }
+  
+  .dark .btn-ghost {
+    color: var(--color-cream);
   }
   
   .dark .btn-ghost:hover {

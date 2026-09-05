@@ -50,6 +50,10 @@ class FakeQuery:
         self._filters.append((column, value))
         return self
 
+    def in_(self, column, values):
+        self._filters.append((column, values))
+        return self
+
     def order(self, column, desc=False):
         return self
 
@@ -57,8 +61,11 @@ class FakeQuery:
         return self
 
     def execute(self):
+        def matches_filter(row, c, v):
+            return row.get(c) in v if isinstance(v, (list, set, tuple)) else row.get(c) == v
+            
         data = [
-            row for row in self._rows if all(row.get(c) == v for c, v in self._filters)
+            row for row in self._rows if all(matches_filter(row, c, v) for c, v in self._filters)
         ]
         return SimpleNamespace(data=data)
 

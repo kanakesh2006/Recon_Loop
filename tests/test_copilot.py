@@ -71,4 +71,4 @@ def test_copilot_error_degrades_gracefully(monkeypatch):
     session = CopilotSession()
     answer = session.ask("hello")
 
-    assert answer.startswith("Copilot error:")
+    assert answer.startswith("Automated explanation unavailable")

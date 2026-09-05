@@ -207,7 +207,7 @@ def read_exceptions():
         response = (
             client.table("audit_log")
             .select("*")
-            .eq("status", "exception")
+            .in_("status", ["exception", "needs_review"])
             .order("created_at", desc=True)
             .limit(100)
             .execute()
@@ -380,13 +380,16 @@ async def _process_job(job_id: str):
         job["progress"] = 70
         job["message"] = "Generating explanations..."
         
-        if result.exceptions:
+        if result.exceptions or result.needs_review:
             explainer = ExceptionExplainer()
             if explainer.available:
-                for record in result.exceptions:
-                    record.explanation = explainer.explain_exception(record)
+                for item in result.exceptions + result.needs_review:
+                    if not getattr(item, "explanation", None):
+                        explanation_text, conf = explainer.explain_exception(item)
+                        item.explanation = explanation_text
+                        item.explanation_confidence = conf
             else:
-                for record in result.exceptions:
+                for record in result.exceptions + result.needs_review:
                     record.explanation = DEGRADED_MESSAGE
                     
         await asyncio.sleep(0.1)

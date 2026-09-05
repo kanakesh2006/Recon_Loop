@@ -43,7 +43,7 @@ def test_degrades_without_api_key(monkeypatch):
     explainer = ExceptionExplainer()
 
     assert explainer.available is False
-    assert explainer.explain_exception(_exception_record()) == DEGRADED_MESSAGE
+    assert explainer.explain_exception(_exception_record()) == (DEGRADED_MESSAGE, None)
 
 
 def test_explain_exception_returns_llm_text(monkeypatch):
@@ -53,7 +53,7 @@ def test_explain_exception_returns_llm_text(monkeypatch):
     monkeypatch.setattr(ExceptionExplainer, "_build_agent", lambda self: fake_agent)
 
     explainer = ExceptionExplainer()
-    explanation = explainer.explain_exception(_exception_record())
+    explanation, conf = explainer.explain_exception(_exception_record())
 
     assert explanation.startswith("The ledger order has a chargeback")
     assert len(fake_agent.payloads) == 1
@@ -70,7 +70,7 @@ def test_explain_exception_degrades_on_persistent_failure(monkeypatch):
 
     explainer = ExceptionExplainer()
 
-    assert explainer.explain_exception(_exception_record()) == DEGRADED_MESSAGE
+    assert explainer.explain_exception(_exception_record())[0] == "Automated explanation unavailable due to rate limits."
 
 
 def test_prompt_includes_matcher_details():

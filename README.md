@@ -6,7 +6,7 @@
 
 ReconLoop closes one full finance-ops loop end to end: it ingests order, settlement, and bank data from three different formats, auto-matches them through a tiered rules + fuzzy engine, and — where most tools stop at "here's a mismatch" — uses a RAG-grounded agent to explain *why* each exception happened, lets a finance user ask about it conversationally, and logs every decision to an immutable audit trail.
 
-![Architecture](architecture.png)
+![ReconLoop System Architecture](reconloop_architecture_detailed.svg)
 
 ---
 
@@ -24,11 +24,12 @@ The bottleneck in 2026 is **verification capacity** — being able to trust and 
 
 ## What ReconLoop Does
 
-1. **Ingests & normalizes** three heterogeneous CSV formats into one canonical schema (amounts in paise, typed direction, source-prefixed IDs).
+1. **Dynamic Ingestion & Auto-Detection** — Accepts heterogeneous CSV formats (Internal Ledger, Payment Gateway, Bank Statements) via a drag-and-drop UI. Uses column-pair heuristics for reliable auto-detection, with manual override capabilities. Amounts are normalized to integer paise.
 2. **Matches in tiers** — exact keys first (order_id ↔ txn_ref, UTR extraction), then fuzzy (amount tolerance bands, sliding date windows, rapidfuzz reference matching, one-to-many bundled payouts).
-3. **Routes by confidence** — auto-matched / needs_review / exception, with every decision written to Supabase.
-4. **Explains exceptions** — a LangGraph agent grounds each break in tool-retrieved transaction evidence and policy documents (fee schedule, chargeback policy, settlement-delay rules) and produces a cited plain-English explanation with a suggested resolution.
-5. **Answers questions** — a conversational copilot over the same data: *"Why is this order short?"*, *"What's the net on a ₹2,499 order?"* — grounded and cited, not hallucinated.
+3. **Routes by confidence** — auto-matched / needs_review / exception, with every decision written to an immutable Supabase audit log.
+4. **Explains exceptions with AI Confidence** — a LangGraph agent grounds each break in tool-retrieved transaction evidence and policy documents. It produces a cited plain-English explanation along with an **AI Confidence Score** so users can take informed, risk-aware decisions.
+5. **Answers questions via Voice & Text** — a conversational copilot over the same data: *"Why is this order short?"*. Includes Web Speech API integration for voice dictation, fully grounded and cited.
+6. **Resilient Streaming** — Real-time Server-Sent Events (SSE) processing with graceful LLM rate-limit fallbacks so the app never crashes under load.
 
 ## Measured Results (held-out 86-event labeled batch, seed 42)
 

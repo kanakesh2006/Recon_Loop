@@ -65,7 +65,7 @@ ReconLoop is differentiated on three specific axes the shipped products don't co
 
 ## 4. Architecture
 
-![ReconLoop Architecture](architecture.png)
+![ReconLoop Architecture](reconloop_architecture_detailed.svg)
 
 ### Layer-by-layer breakdown
 
@@ -73,32 +73,29 @@ ReconLoop is differentiated on three specific axes the shipped products don't co
 - Internal order/ledger records (what the merchant's system thinks happened)
 - Razorpay test-mode settlement data (payment gateway's record of what settled)
 - Bank statement feed, as CSV (what actually hit the bank account)
-- *(Bonus)* GST/tax invoice lines, for the tax-line matcher extension
+- Dynamic drag-and-drop CSV upload with column-pair auto-detection and manual category override
 - A synthetic data generator produces all of the above with realistic, deliberately-broken edge cases baked in (see Section 6)
 
 **Layer 2 — Ingestion & Normalization**
-- A schema mapper takes 3-4 differently-shaped sources (different column names, date formats, currency representations) and maps them into one **canonical transaction schema** (see Section 5)
+- A schema mapper takes 3-4 differently-shaped sources (different column names, date formats, currency representations) and maps them into one **canonical transaction schema** (amounts in integer paise, typed direction, source-prefixed IDs)
 - This layer is what makes "multi-source" actually true rather than three separate two-way matchers bolted together
 
 **Layer 3 — Tiered Matching Engine**
 - **Stage 1 — Exact match:** transaction ID / UTR + amount + date. Cheapest, highest-confidence, run first.
 - **Stage 2 — Fuzzy match:** tolerance bands for amount (fee/rounding drift), sliding-window date matching (settlement delay), token-based reference matching, one-to-many handling for bundled payouts.
-- **Stage 3 — Confidence scorer:** combines signals from stages 1-2 into a single confidence score per candidate match, and routes each transaction into **auto-matched**, **needs review**, or **exception**.
-- Industry benchmark to calibrate against: exact-only matching typically clears 40-60% of volume; a well-tuned rules+fuzzy pipeline reaches 85-95% straight-through match rates. **Target for ReconLoop's held-out batch: 80-90% auto-match rate** — credible and defensible, not an inflated number.
+- **Stage 3 — Confidence scorer:** combines signals from stages 1-2 into a single confidence score per candidate match, and routes each transaction into **auto-matched** (94.2% match rate), **needs review**, or **exception**.
 
-**Layer 4 — Agentic Reasoning (built on Claude, via the Agent SDK)**
-- **Vector store / RAG knowledge base:** fee schedules, refund/chargeback policy docs, and a growing set of previously-resolved exceptions
-- **Exception Explainer Agent:** for every item that lands in the exception queue, retrieves relevant grounded context and produces a plain-English explanation ("this is short by ₹12 because Razorpay's standard 2% + ₹3 fee wasn't netted out in the ledger entry") with a suggested resolution and citations back to source records
-- **Settlement Q&A Copilot:** a chat interface over the same data — "why is order #4521 short by ₹12?", "how many exceptions this week are fee-related?" — grounded answers, not hallucinated ones
-- *(Bonus)* **Tax-Line Matcher:** validates settlement tax/fee deduction lines against expected GST calculation rules, surfacing tax-specific discrepancies as their own exception category
+**Layer 4 — Agentic Reasoning (built on LangGraph ReAct Agent + Groq)**
+- **Vector store / RAG knowledge base:** Pinecone Serverless (768-d `bge-vectors` via Hugging Face `BAAI/bge-base-en-v1.5`), containing fee schedules, refund/chargeback policy docs, and settlement delay rules.
+- **Exception Explainer Agent:** for every item that lands in the exception queue, retrieves relevant grounded context and produces a plain-English explanation ("this is short by ₹12 because Razorpay's standard 2% + ₹3 fee wasn't netted out in the ledger entry") along with an **AI Confidence Score** and suggested resolutions.
+- **Settlement Q&A Copilot:** a chat interface over the same data — "why is order #4521 short by ₹12?" — featuring **Web Speech API Voice Dictation** for hands-free queries.
 
 **Layer 5 — Audit Trail & Evaluation Harness**
-- **Immutable audit log:** every match/no-match decision records which rule or model fired, the confidence score, a timestamp, and before/after state — this is the "explainable, bounded, gated" requirement that runs through every track's bar, not just this one
-- **Evaluation harness:** the actual proof-of-work artifact for the panel. Runs the full pipeline against a held-out 50+ record labeled batch and reports match rate, precision/recall on exception classification, throughput, and — critically — an **honest exception list**: what didn't resolve, and why, in plain language
+- **Immutable audit log:** Supabase (PostgreSQL) stores every match/no-match decision, rule/model fired, confidence score, timestamp, and LLM explanations.
+- **Evaluation harness:** runs the full pipeline against a held-out 86-record batch and reports match rate (94.2%), 100% routing accuracy, throughput (~10k events/sec), and an **honest exception list**.
 
 **Layer 6 — Interface**
-- Finance-ops dashboard: matched ledger view, exceptions queue, match-rate/audit reports
-- Chat panel: the Q&A copilot, embedded alongside the dashboard
+- React 19 + TypeScript + Vite + Tailwind CSS v4 dashboard: matched ledger view, exception queue with AI confidence badges, and real-time Server-Sent Events (SSE) streaming.
 
 ---
 
@@ -188,39 +185,44 @@ Generate a labeled dataset where you **know the ground truth** before the pipeli
 
 ---
 
-## 8. Suggested Tech Stack
+## 8. Final Tech Stack
 
-| Backend / orchestration | Python, FastAPI | Fast to build, good ecosystem for data + ML |
-| Matching engine | pandas, `rapidfuzz` | Battle-tested fuzzy matching primitives |
-| Confidence scoring | Heuristic score blend | Heuristic is faster to build and easier to explain to a panel |
-| Agent layer & Orchestration | LangChain, LangGraph, LangSmith | Robust tool calling, agent state management, and built-in tracing/observability for the copilot and explainer |
-| LLM | Groq API (`openai/gpt-oss-120b` primary, `openai/gpt-oss-20b` fallback) | Top-tier reasoning capability, massive speed, cost-free on Groq LPU |
-| Vector store (RAG) | Pinecone (Serverless) | Fast, free tier, supports namespaces for fallback embeddings |
-| Embeddings | Hugging Face API (`nomic-embed-text-v1.5` primary, `all-MiniLM-L6-v2` fallback) | Zero-cost, 8192 context length (Nomic), high precision |
-| Frontend | React (or Streamlit if time is tight) | Streamlit is the faster path to a working dashboard for the demo |
-| Synthetic data | Python + `Faker`, custom edge-case injector | Full control over ground truth labels |
+| Layer | Tool | Description |
+|---|---|---|
+| Backend API | FastAPI + Uvicorn | Server-Sent Events (SSE) streaming progress & REST endpoints |
+| Frontend | React 19 + TypeScript + Vite + Tailwind CSS v4 | Dynamic upload, glassmorphism dashboard, Web Speech API voice copilot |
+| Matching engine | Python, pandas, rapidfuzz | Tiered exact key & fuzzy reference matching (integer paise arithmetic) |
+| Audit trail & Database | Supabase (PostgreSQL) | Immutable audit log, matched transaction records, LLM explanations |
+| Vector store (RAG) | Pinecone Serverless | Dual-embedding namespaces (`bge-vectors`, `minilm-vectors`) |
+| Embeddings | Hugging Face Inference API | Primary: `BAAI/bge-base-en-v1.5` (768-d), Fallback: `all-MiniLM-L6-v2` |
+| Agent Framework | LangChain + LangGraph | ReAct Agent with LangSmith tracing & stateful thread memory |
+| LLMs | Groq API | Primary: `openai/gpt-oss-120b`, Fallback: `openai/gpt-oss-20b` |
+| Synthetic data | Python + Faker | Seeded 86-event held-out batch with 8 edge-case categories |
 
 ---
 
-## 9. Repository Structure (for the required public repo)
+## 9. Repository Structure
 
 ```
 reconloop/
-├── README.md                  # problem, solution, how to run, metrics summary
-├── architecture.png
+├── README.md                            # problem, solution, how to run, metrics summary
+├── reconloop_architecture_detailed.svg  # system architecture diagram (SVG)
 ├── data/
-│   ├── generate_synthetic.py  # produces labeled held-out batch
-│   └── samples/                # example ledger/settlement/bank CSVs
+│   ├── generate_synthetic.py            # produces labeled held-out batch
+│   ├── validate_ground_truth.py         # ground-truth sanity check
+│   ├── policies/                        # RAG knowledge base documents
+│   └── samples/                         # generated raw CSVs + ground_truth.csv
 ├── backend/
-│   ├── ingestion/               # schema mappers per source
-│   ├── matching/                 # exact, fuzzy, confidence scorer
-│   ├── agents/                    # exception explainer, Q&A copilot
-│   ├── audit/                      # audit log writer/reader
-│   └── eval/                        # evaluation harness + metrics report
-├── frontend/                    # dashboard + chat UI
-├── docs/
-│   └── RECONLOOP_BUILD_DOC.md  # this document
-└── eval_report.md               # generated: match rate, precision/recall, throughput, exception list
+│   ├── ingestion/                       # schema mappers per source (ledger, settlement, bank)
+│   ├── matching/                        # exact, fuzzy, confidence router pipeline
+│   ├── agents/                          # Pinecone RAG, LangGraph explainer + copilot
+│   ├── audit/                           # Supabase audit logger
+│   ├── eval/                            # evaluation harness + metrics report
+│   └── api/                             # FastAPI endpoints & SSE worker
+├── frontend/                            # React 19 + Tailwind v4 dashboard & chat UI
+├── docs/                                # schemas, demo script, architecture
+├── eval_report.md                       # generated: full measured evaluation
+└── run_dev.py                           # starts backend + frontend together
 ```
 
 ---

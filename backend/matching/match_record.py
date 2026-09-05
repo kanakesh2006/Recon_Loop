@@ -21,6 +21,7 @@ class MatchRecord(BaseModel):
     rule_or_model: str
     timestamp: datetime
     explanation: str = ""
+    explanation_confidence: float | None = None
     details: dict = Field(default_factory=dict)
 
 

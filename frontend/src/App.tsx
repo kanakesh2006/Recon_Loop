@@ -59,7 +59,7 @@ export default function App() {
         <main className="mx-auto max-w-7xl px-6 py-6">
           {page === "hero" && <Hero onGetStarted={() => setPage("dashboard")} />}
           {page === "dashboard" && <Dashboard />}
-          {page === "upload" && <DocumentUpload />}
+          {page === "upload" && <DocumentUpload onNavigateToDashboard={() => setPage("dashboard")} />}
         </main>
 
         <footer className="border-t border-brown/10 py-4 text-center text-[11px] text-slate-500 font-medium">

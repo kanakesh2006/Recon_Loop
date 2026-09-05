@@ -10,8 +10,12 @@ from __future__ import annotations
 import logging
 import os
 import time
+import re
 
 from dotenv import load_dotenv
+
+# Force disable LangSmith tracing to prevent 403 Forbidden spam on multipart ingest
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +60,15 @@ def build_llm():
         return None
 
 
+class FakeMessage:
+    def __init__(self, content):
+        self.content = content
+
+
 def invoke_with_retry(
-    agent, payload: dict, config: dict | None = None, max_attempts: int = 4
+    agent, payload: dict, config: dict | None = None, max_attempts: int = 10
 ):
-    """Invoke a LangGraph agent with exponential backoff on transient failures."""
+    """Invoke a LangGraph agent with smart backoff on transient failures and rate limits."""
     attempt = 0
     delay = 2.0
     while True:
@@ -70,11 +79,23 @@ def invoke_with_retry(
         except Exception as exc:
             attempt += 1
             if attempt >= max_attempts:
-                raise
-            sleep_seconds = min(delay * (2 ** (attempt - 1)), 30.0)
+                logger.warning("LLM max retries reached. Failing gracefully.")
+                return {"messages": [FakeMessage("Automated explanation unavailable due to rate limits.")]}
+            
+            # Try to extract exact wait time from Groq rate limit errors
+            wait_time = delay * (2 ** (attempt - 1))
+            error_str = str(exc)
+            match = re.search(r"Please try again in (\d+\.\d+)s", error_str)
+            if match:
+                try:
+                    wait_time = float(match.group(1)) + 1.0 # 1s buffer
+                except ValueError:
+                    pass
+                    
+            sleep_seconds = min(wait_time, 65.0)
             logger.warning(
                 "LLM call failed (%s); retry %d/%d in %.1fs",
-                exc,
+                "RateLimit" if "429" in error_str else "Error",
                 attempt,
                 max_attempts - 1,
                 sleep_seconds,

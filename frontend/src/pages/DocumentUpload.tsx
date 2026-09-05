@@ -16,7 +16,11 @@ interface JobStatus {
   error?: string;
 }
 
-export default function DocumentUpload() {
+interface DocumentUploadProps {
+  onNavigateToDashboard?: () => void;
+}
+
+export default function DocumentUpload({ onNavigateToDashboard }: DocumentUploadProps) {
   const [step, setStep] = useState<"upload" | "processing" | "results">("upload");
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
@@ -132,25 +136,54 @@ export default function DocumentUpload() {
           <div className="animate-fade-up text-center">
             <div className="card max-w-md mx-auto p-8">
               <div className="mb-6">
-                <div className="relative w-16 h-16 mx-auto mb-4">
-                  <svg className="w-full h-16 animate-spin text-amber-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="animate-spin" stroke="currentColor" strokeLinecap="round" strokeWidth={4} d="M12 2v4m0 12v4M12 2a10 10 0 010 20M12 2a10 10 0 000 20" />
+                <div className="relative w-20 h-20 mx-auto mb-6">
+                  {/* Outer pulsing ring */}
+                  <div
+                    className="absolute inset-0 rounded-full border-4 border-amber-400/20"
+                    style={{ animation: "pulse-ring 2s ease-in-out infinite" }}
+                  />
+                  {/* Spinning arc */}
+                  <svg className="w-full h-full" viewBox="0 0 80 80" style={{ animation: "spin 1.2s linear infinite" }}>
+                    <circle
+                      cx="40" cy="40" r="34"
+                      fill="none"
+                      stroke="rgba(212, 165, 67, 0.15)"
+                      strokeWidth="6"
+                    />
+                    <circle
+                      cx="40" cy="40" r="34"
+                      fill="none"
+                      stroke="url(#spinner-gradient)"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      strokeDasharray="160"
+                      strokeDashoffset="120"
+                    />
+                    <defs>
+                      <linearGradient id="spinner-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor="#F59E0B" />
+                        <stop offset="100%" stopColor="#D4A543" />
+                      </linearGradient>
+                    </defs>
                   </svg>
+                  {/* Center percentage */}
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-sm font-black text-brown">{jobStatus?.progress ?? 0}%</span>
+                  </div>
                 </div>
                 <h3 className="text-xl font-bold text-brown dark:text-cream mb-2">
                   Processing your files...
                 </h3>
                 <p className="text-muted mb-6">{jobStatus?.message || "Processing..."}</p>
-                <div className="w-full h-2 bg-white/10 dark:bg-brown-lighter/20 rounded-full overflow-hidden">
+                <div className="w-full h-2.5 bg-brown/10 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-400 to-amber-500 transition-all duration-300 ease-out"
-                    style={{ width: `${jobStatus?.progress || 0}%` }}
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${jobStatus?.progress || 0}%`,
+                      background: "linear-gradient(90deg, #D4A543, #F59E0B)",
+                    }}
                   />
                 </div>
-                <p className="mt-3 text-sm text-muted">
-                  {jobStatus?.progress ?? 0}% complete
-                </p>
               </div>
             </div>
           </div>
@@ -210,10 +243,24 @@ export default function DocumentUpload() {
               <button onClick={handleCancel} className="btn-secondary">
                 New Upload
               </button>
+              <button
+                onClick={() => onNavigateToDashboard?.()}
+                className="btn-primary"
+              >
+                Go to Dashboard →
+              </button>
             </div>
           </div>
         )}
       </main>
+
+      {/* Keyframe for pulse-ring animation */}
+      <style>{`
+        @keyframes pulse-ring {
+          0%, 100% { transform: scale(1); opacity: 0.5; }
+          50% { transform: scale(1.15); opacity: 0.2; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -28,8 +28,28 @@ export default function FileUpload({ onFilesConfirmed, onCancel }: FileUploadPro
 
   const detectType = useCallback((headers: string[]): string | null => {
     const headersLower = headers.map(h => h.toLowerCase().trim());
-    if (headersLower.includes("utr") || headersLower.includes("ref")) return "bank";
-    if (headersLower.includes("settlement") || headersLower.includes("fee")) return "settlement";
+    const hasCol = (name: string) => headersLower.includes(name);
+    const hasPartial = (substr: string) => headersLower.some(h => h.includes(substr));
+
+    // Bank statement: strongest signal — debit/credit columns with a reference
+    if ((hasCol("debit") || hasCol("credit")) && (hasCol("reference_no") || hasPartial("reference") || hasCol("balance"))) {
+      return "bank";
+    }
+
+    // Settlement report: settlement_id + txn_ref, or utr_number
+    if ((hasCol("settlement_id") || hasPartial("settlement")) && (hasCol("txn_ref") || hasCol("utr_number") || hasPartial("utr"))) {
+      return "settlement";
+    }
+
+    // Ledger: order_id + customer_name
+    if (hasCol("order_id") && (hasCol("customer_name") || hasCol("amount"))) {
+      return "ledger";
+    }
+
+    // Fallback heuristics based on unique columns
+    if (hasCol("debit") || hasCol("credit") || hasCol("balance")) return "bank";
+    if (hasPartial("settlement") || hasCol("utr_number") || hasCol("net_amount")) return "settlement";
+
     return "ledger";
   }, []);
 
