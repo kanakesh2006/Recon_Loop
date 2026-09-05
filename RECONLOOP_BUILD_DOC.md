@@ -65,7 +65,7 @@ ReconLoop is differentiated on three specific axes the shipped products don't co
 
 ## 4. Architecture
 
-![ReconLoop Architecture](reconloop_architecture_detailed.svg)
+![ReconLoop Architecture](architecture.png)
 
 ### Layer-by-layer breakdown
 
