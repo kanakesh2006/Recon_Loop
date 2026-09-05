@@ -6,7 +6,7 @@
 
 ReconLoop closes a full finance-ops loop end to end. It ingests order, settlement, and bank data across three different CSV formats, auto-matches them through a tiered rules and fuzzy matching engine, and uses a RAG-grounded agent to explain why each exception occurred. Finance users can investigate discrepancies conversationally over text or voice, with every decision written to an immutable audit log.
 
-![ReconLoop System Architecture](reconloop_architecture_detailed.svg)
+![ReconLoop System Architecture](architecture.svg)
 
 ---
 
